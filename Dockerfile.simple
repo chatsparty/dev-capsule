@@ -1,0 +1,110 @@
+# Option 2: Use built-in VS Code Server with custom extensions
+# Note: Use --platform linux/amd64 for Mac/ARM64 compatibility
+FROM --platform=linux/amd64 mcr.microsoft.com/devcontainers/universal:2-linux
+
+# Switch to root for installation
+USER root
+
+# Install code-server for web-based VS Code access
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
+# Create code-server config directory
+RUN mkdir -p /home/codespace/.config/code-server
+
+# Configure code-server
+RUN echo "bind-addr: 0.0.0.0:8080" > /home/codespace/.config/code-server/config.yaml \
+    && echo "auth: none" >> /home/codespace/.config/code-server/config.yaml \
+    && echo "cert: false" >> /home/codespace/.config/code-server/config.yaml \
+    && chown -R codespace:codespace /home/codespace/.config
+
+# Switch to codespace user to install extensions in the right location
+USER codespace
+
+# Install extensions for the codespace user (continue even if some fail)
+RUN code-server --install-extension ms-python.python || true \
+    && code-server --install-extension ms-vscode.vscode-typescript-next || true \
+    && code-server --install-extension bradlc.vscode-tailwindcss || true \
+    && code-server --install-extension esbenp.prettier-vscode || true \
+    && code-server --install-extension ms-vscode-remote.remote-containers || true \
+    && code-server --install-extension github.copilot || true \
+    && code-server --install-extension ms-playwright.playwright || true \
+    && code-server --install-extension ms-vscode.docker || true \
+    && code-server --install-extension dbaeumer.vscode-eslint || true
+
+# Switch back to root for final setup
+USER root
+
+# Install Node.js (if not already present) and Claude Code CLI via npm
+RUN npm install -g @anthropic-ai/claude-code || true
+
+# Copy custom welcome page
+COPY welcome.html /workspace/welcome.html
+
+# Create README that will open by default
+RUN echo '# 🚀 Welcome to Your Dev Capsule!\n\
+\n\
+## 🎯 Quick Start\n\
+\n\
+### 🤖 AI Assistant (Claude Code CLI v1.0.35)\n\
+```bash\n\
+claude "help me write a Python function"\n\
+claude "explain this code"\n\
+claude "fix this bug in my JavaScript"\n\
+```\n\
+\n\
+### 🌐 View Beautiful Welcome Page\n\
+1. Press `Ctrl+Shift+P` (Command Palette)\n\
+2. Type "Simple Browser: Show"\n\
+3. Enter: `file:///workspace/welcome.html`\n\
+\n\
+**Or click here:** [Open Welcome Page](./welcome.html)\n\
+\n\
+### 🛠️ Pre-installed Tools\n\
+- **Languages**: Python, Node.js, Go, Java, .NET, PHP, Ruby\n\
+- **Tools**: Docker, kubectl, git, npm, pip\n\
+- **Extensions**: Python, TypeScript, Prettier, ESLint, Tailwind CSS, Playwright\n\
+\n\
+### ⚡ Quick Commands\n\
+- `Ctrl+Shift+P` - Command Palette\n\
+- `Ctrl+` ` - Open Terminal\n\
+- `Ctrl+Shift+E` - File Explorer\n\
+- `Ctrl+Shift+F` - Search\n\
+\n\
+### 🚀 Development Ports\n\
+- Port **3000** is ready for your dev servers\n\
+- Port **8080** is this VS Code instance\n\
+\n\
+---\n\
+\n\
+**Happy coding!** 🎉 This environment is optimized for rapid development with AI assistance.\n\
+' > /workspace/README.md
+
+# Create VS Code settings to open README by default
+RUN mkdir -p /home/codespace/.local/share/code-server/User \
+    && echo '{ \
+        "workbench.startupEditor": "readme", \
+        "workbench.welcomePage.walkthroughs.openOnInstall": false, \
+        "workbench.tips.enabled": false, \
+        "workbench.colorTheme": "Default Dark Modern", \
+        "editor.fontSize": 14, \
+        "editor.formatOnSave": true, \
+        "terminal.integrated.fontSize": 14 \
+    }' > /home/codespace/.local/share/code-server/User/settings.json \
+    && chown -R codespace:codespace /home/codespace/.local
+
+# Note: Simple Browser is built into VS Code/code-server by default
+# Access it via: View > Command Palette > "Simple Browser: Show"
+
+# Expose essential ports only
+EXPOSE 8080
+EXPOSE 3000
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown codespace:codespace /workspace
+
+# Switch to codespace user (the default user in universal image)
+USER codespace
+WORKDIR /workspace
+
+# Start code-server normally (README will open by default)
+CMD ["code-server", "--bind-addr=0.0.0.0:8080", "--auth=none", "/workspace"]
